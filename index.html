@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="リベ市場売上">
+<meta name="theme-color" content="#185FA5">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>リベ市場 売上管理</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.1.0/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css?v=5">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== ヘッダー ===== -->
+  <header class="app-header">
+    <span class="app-title" id="header-title">ホーム</span>
+    <button class="header-btn" id="btn-settings" aria-label="設定"><i class="ti ti-settings"></i></button>
+  </header>
+
+  <!-- ===== ホーム画面（ダッシュボード / 月間売上 タブ） ===== -->
+  <section class="screen" id="screen-home">
+    <div class="tabbar">
+      <button class="tab active" data-tab="dashboard">ダッシュボード</button>
+      <button class="tab" data-tab="monthly">月間売上</button>
+    </div>
+
+    <!-- ダッシュボード -->
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="date-row" id="today-date">―</div>
+
+      <div class="card">
+        <div class="card-label">今日の成績</div>
+        <div class="stat3">
+          <div><div class="stat-k">売上</div><div class="stat-v" id="d-sales">¥0</div></div>
+          <div><div class="stat-k">個数</div><div class="stat-v" id="d-count">0</div></div>
+          <div><div class="stat-k">利益</div><div class="stat-v profit" id="d-profit">¥0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">売上グラフ</div>
+        <div class="legend">
+          <span><i class="dot dot-now"></i>今月</span>
+          <span><i class="dot dot-prev"></i>先月</span>
+        </div>
+        <div class="chart-wrap"><canvas id="salesChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">今月の売上</div>
+        <div class="big-num" id="m-sales">¥0</div>
+        <div class="compare-row">
+          <span class="cmp"><span class="cmp-k">先月比</span> <span class="cmp-v up" id="m-vs-prev">―</span></span>
+          <span class="cmp"><span class="cmp-k">前年比</span> <span class="cmp-v up" id="m-vs-year">―</span></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">在庫情報</div>
+        <div class="stock-row">
+          <div class="stock-list">
+            <div>在庫数 <b id="s-count">0コ</b></div>
+            <div>販売価格での在庫金額 <b id="s-sell">¥0</b></div>
+            <div>仕入金額での在庫金額 <b id="s-cost">¥0</b></div>
+          </div>
+          <div class="ring" id="turnover-ring"><span id="turnover-val">0%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 月間売上 -->
+    <div class="tab-content" id="tab-monthly">
+      <div class="period-box">
+        <div class="period-label">集計期間</div>
+        <button class="period-pick" id="period-pick"><span id="period-text">2026年6月</span> <i class="ti ti-chevron-right"></i></button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">売上集計 <span class="edit-hint">（タップで編集できる項目あり）</span></div>
+        <table class="breakdown" id="breakdown-table">
+          <tr><td>販売数</td><td id="bd-count">0コ</td></tr>
+          <tr><td>売上金額</td><td id="bd-sales">¥0</td></tr>
+          <tr><td>仕入金額</td><td class="neg" id="bd-cost">¥0</td></tr>
+          <tr class="editable" data-field="shipping"><td>送料 <i class="ti ti-pencil edit-ic"></i></td><td id="bd-ship">¥0</td></tr>
+          <tr class="editable" data-field="fee"><td>販売手数料 <i class="ti ti-pencil edit-ic"></i></td><td class="neg" id="bd-fee">¥0</td></tr>
+          <tr class="editable" data-field="point"><td>ポイント <i class="ti ti-pencil edit-ic"></i></td><td class="neg" id="bd-point">0pt</td></tr>
+          <tr class="editable" data-field="other"><td>その他経費 <i class="ti ti-pencil edit-ic"></i></td><td class="neg" id="bd-other">¥0</td></tr>
+          <tr class="editable" data-field="refund"><td>返金 <i class="ti ti-pencil edit-ic"></i></td><td class="neg" id="bd-refund">¥0</td></tr>
+          <tr class="total-row"><td>利益額</td><td id="bd-profit">¥0</td></tr>
+          <tr class="total-row"><td>利益率</td><td id="bd-rate">0%</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 売れたもの画面 ===== -->
+  <section class="screen" id="screen-sold" hidden>
+    <div class="sold-list" id="sold-list"></div>
+  </section>
+
+  <!-- ===== 在庫画面 ===== -->
+  <section class="screen" id="screen-stock" hidden>
+    <div class="stock-toolbar">
+      <input type="text" id="stock-search" placeholder="商品名で検索">
+      <button class="add-btn" id="btn-add-stock"><i class="ti ti-plus"></i></button>
+    </div>
+    <div class="stock-items" id="stock-items"></div>
+  </section>
+
+  <!-- ===== 在庫追加モーダル ===== -->
+  <div class="modal-overlay" id="stock-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">在庫を追加 / 編集</div>
+      <label>商品名<input type="text" id="f-name"></label>
+      <label>SKU（任意）<input type="text" id="f-sku"></label>
+      <label>仕入原価（円）<input type="number" id="f-cost" inputmode="numeric"></label>
+      <label>販売予定価格（円）<input type="number" id="f-price" inputmode="numeric"></label>
+      <label>在庫数<input type="number" id="f-qty" inputmode="numeric"></label>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="f-cancel">キャンセル</button>
+        <button class="btn-save" id="f-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 下部ナビ ===== -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-screen="home"><i class="ti ti-home"></i><span>ホーム</span></button>
+    <button class="nav-item" data-screen="stock"><i class="ti ti-package"></i><span>在庫</span></button>
+    <button class="nav-item" data-screen="sold"><i class="ti ti-shopping-cart"></i><span>売上</span></button>
+  </nav>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="data.js?v=5"></script>
+<script src="config.js?v=5"></script>
+<script src="db.js?v=5"></script>
+<script src="app.js?v=5"></script>
+<script>
+/* 開発中はキャッシュを無効化（毎回最新を表示）。
+   本番化（フェーズ3）で再びSW登録に戻す。 */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    regs.forEach(function(r){ r.unregister(); });
+  });
+  if (window.caches) {
+    caches.keys().then(function(keys){ keys.forEach(function(k){ caches.delete(k); }); });
+  }
+}
+</script>
+</body>
+</html>
