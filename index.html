@@ -12,7 +12,7 @@
 <title>リベ市場 売上管理</title>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.1.0/tabler-icons.min.css">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -79,7 +79,10 @@
     <div class="tab-content" id="tab-monthly">
       <div class="period-box">
         <div class="period-label">集計期間</div>
-        <button class="period-pick" id="period-pick"><span id="period-text">2026年6月</span> <i class="ti ti-chevron-right"></i></button>
+        <div class="period-pick">
+          <select id="period-select"></select>
+          <i class="ti ti-chevron-down"></i>
+        </div>
       </div>
 
       <div class="card">
@@ -144,7 +147,7 @@
 <script src="data.js?v=5"></script>
 <script src="config.js?v=5"></script>
 <script src="db.js?v=7"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=8"></script>
 <script>
 /* 開発中はキャッシュを無効化（毎回最新を表示）。
    本番化（フェーズ3）で再びSW登録に戻す。 */

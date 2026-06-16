@@ -113,11 +113,15 @@ body {
 .period-box { margin-bottom: 14px; }
 .period-label { font-size: 12px; color: var(--text-hint); margin-bottom: 6px; padding-left: 2px; }
 .period-pick {
-  width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px; font-size: 16px; font-weight: 600; color: var(--text);
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px; cursor: pointer;
+  position: relative; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  display: flex; align-items: center; cursor: pointer;
 }
-.period-pick .ti { color: var(--text-hint); }
+.period-pick .ti { position: absolute; right: 14px; color: var(--text-hint); pointer-events: none; }
+.period-pick select {
+  width: 100%; -webkit-appearance: none; appearance: none; background: transparent; border: none;
+  padding: 14px 40px 14px 16px; font-size: 16px; font-weight: 600; color: var(--text);
+  text-align: right; cursor: pointer; outline: none; font-family: inherit;
+}
 
 /* ===== 月間内訳テーブル ===== */
 .breakdown { width: 100%; border-collapse: collapse; }

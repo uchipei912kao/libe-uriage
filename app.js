@@ -10,10 +10,13 @@ let manual  = null;  // 月別手動入力（送料・手数料 等）
 let summary = null;  // 売上集計（sold から計算した実データ）
 
 function getPeriod() { const n = new Date(); return `${n.getFullYear()}年${n.getMonth()+1}月`; }
+function labelToYM(label) { const m = String(label).match(/(\d+)年(\d+)月/); return m ? `${m[1]}-${String(m[2]).padStart(2,'0')}` : ''; }
+function ymToLabel(ym) { const p = ym.split('-'); return `${p[0]}年${parseInt(p[1],10)}月`; }
+let monthlyPeriod = getPeriod();  // 月間売上タブで選択中の期間（過去月も選べる）
 
 async function reloadStock()  { stock  = await DB.getStock(); }
 async function reloadSold()   { sold   = await DB.getSold(); summary = computeSummary(sold); }
-async function reloadManual() { manual = await DB.getManual(getPeriod()); }
+async function reloadManual() { manual = await DB.getManual(monthlyPeriod); }
 
 /* ローカルモード時の在庫保存（DBモードは upsert を使う） */
 function saveStockLocal() { if (DB.mode === 'local') DB.localSaveStockAll(stock); }
@@ -108,7 +111,7 @@ function setCompare(id, val, hasData) {
   el.className = 'cmp-v ' + (up ? 'up' : 'down');
 }
 
-/* ===== 月間売上（手動入力対応） ===== */
+/* ===== 月間売上（手動入力対応・過去月選択対応） ===== */
 const MANUAL_FIELDS = ['shipping','fee','point','other','refund'];
 const FIELD_LABELS = { shipping:'送料', fee:'販売手数料', point:'ポイント', other:'その他経費', refund:'返金' };
 
@@ -116,12 +119,38 @@ function manualFallback() {
   return { shipping: 0, fee: 0, point: 0, other: 0, refund: 0 };
 }
 
+/* 指定した月(YYYY-MM)の集計を sold から計算 */
+function monthBreakdownFor(ym) {
+  let count = 0, sales = 0, cost = 0;
+  (sold || []).forEach(it => {
+    if (String(it.date || '').slice(0, 7) === ym) {
+      count += (it.qty||0);
+      sales += (it.price||0) * (it.qty||0);
+      cost  += (it.cost||0)  * (it.qty||0);
+    }
+  });
+  return { count, sales, cost };
+}
+
+/* 売上のある月＋今月 を新しい順で返す */
+function availableMonths() {
+  const set = new Set([labelToYM(getPeriod())]);
+  (sold || []).forEach(it => { const ym = String(it.date||'').slice(0,7); if (ym.length === 7) set.add(ym); });
+  return Array.from(set).sort().reverse().map(ymToLabel);
+}
+
+function populatePeriodSelect() {
+  const sel = $('period-select');
+  if (!sel) return;
+  const months = availableMonths();
+  if (months.indexOf(monthlyPeriod) === -1) monthlyPeriod = months[0];
+  sel.innerHTML = months.map(m => `<option value="${m}"${m===monthlyPeriod?' selected':''}>${m}</option>`).join('');
+}
+
 function renderMonthly() {
-  const s = summary || computeSummary(sold);
-  const b = s.monthBreakdown;
+  const b = monthBreakdownFor(labelToYM(monthlyPeriod));
   const m = manual || manualFallback();
 
-  $('period-text').textContent = s.period;
   $('bd-count').textContent  = b.count.toLocaleString('ja-JP') + 'コ';
   $('bd-sales').textContent  = yen(b.sales);
   $('bd-cost').textContent   = '-' + yen(b.cost);
@@ -149,7 +178,14 @@ async function editManualField(field) {
   if (isNaN(val)) { alert('数字を入力してください'); return; }
   m[field] = val;
   manual = m;
-  await DB.saveManual(getPeriod(), m);
+  await DB.saveManual(monthlyPeriod, m);
+  renderMonthly();
+}
+
+/* 集計期間を切り替え（過去月の手動入力を読み直して再描画） */
+async function changePeriod(label) {
+  monthlyPeriod = label;
+  manual = await DB.getManual(monthlyPeriod);
   renderMonthly();
 }
 
@@ -167,10 +203,9 @@ function renderSold() {
       <div class="sold-meta">注文番号 ${esc(it.orderNo)}<br>注文日 ${esc(it.date)}</div>
       <div class="sold-grid">
         <div class="k">商品価格</div><div class="v">${yen(it.price)}</div>
-        <div class="k">仕入価格</div><div class="v">${yen(it.cost)}</div>
+        <div class="k">仕入価格</div><div class="v">${it.cost > 0 ? yen(it.cost) : '—'}</div>
         <div class="k">売れた個数</div><div class="v">${it.qty}</div>
-        <div class="k">在庫</div><div class="v">${it.stock}</div>
-        <div class="k">粗利</div><div class="v profit">${yen(gross)}</div>
+        <div class="k">粗利</div><div class="v profit">${it.cost > 0 ? yen(gross) : '—'}</div>
       </div>`;
     list.appendChild(card);
   });
@@ -283,9 +318,12 @@ async function init() {
     console.warn('データ読込でエラー。ローカルにフォールバック', e);
   }
 
+  populatePeriodSelect();
   renderDashboard();
   renderMonthly();
   renderChart();
+
+  $('period-select').addEventListener('change', (e) => changePeriod(e.target.value));
 
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
