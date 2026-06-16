@@ -206,7 +206,7 @@ function renderSold() {
       <div class="sold-meta">注文番号 ${esc(it.orderNo)}<br>注文日 ${esc(it.date)}</div>
       <div class="sold-grid">
         <div class="k">商品価格</div><div class="v">${yen(it.price)}</div>
-        <div class="k">仕入価格</div><div class="v">${it.cost > 0 ? yen(it.cost) : '—'}</div>
+        <div class="k">仕入価格 <i class="ti ti-pencil edit-ic"></i></div><div class="v cost-edit ${it.cost>0?'':'cost-empty'}" data-idx="${idx}">${it.cost > 0 ? yen(it.cost) : '入力する'}</div>
         <div class="k">送料 <i class="ti ti-pencil edit-ic"></i></div><div class="v ship-edit ${(it.shipping||0)>0?'':'ship-empty'}" data-idx="${idx}">${shipText}</div>
         <div class="k">売れた個数</div><div class="v">${it.qty}</div>
         <div class="k">粗利</div><div class="v profit">${it.cost > 0 ? yen(gross) : '—'}</div>
@@ -216,6 +216,25 @@ function renderSold() {
   document.querySelectorAll('.ship-edit').forEach(el => {
     el.addEventListener('click', () => editSoldShipping(parseInt(el.dataset.idx, 10)));
   });
+  document.querySelectorAll('.cost-edit').forEach(el => {
+    el.addEventListener('click', () => editSoldCost(parseInt(el.dataset.idx, 10)));
+  });
+}
+
+/* 売れたもの1件の仕入原価を手入力（在庫切れ品など）→ DB保存 → 利益に反映 */
+async function editSoldCost(idx) {
+  const it = sold[idx];
+  if (!it) return;
+  const cur = it.cost || 0;
+  const input = prompt(`仕入原価を入力（円・1個あたり）\n${it.name.slice(0, 24)}…`, cur);
+  if (input === null) return;
+  const val = Number(String(input).replace(/[,，\s¥￥]/g, ''));
+  if (isNaN(val) || val < 0) { alert('正しい数字を入力してください'); return; }
+  await DB.updateSold(it.id, { cost: val });
+  await reloadSold();   // sold再取得＆summary再計算
+  renderSold();
+  renderMonthly();
+  renderDashboard();
 }
 
 /* 売れたもの1件の送料を手入力 → DB保存 → 月間にも反映 */
