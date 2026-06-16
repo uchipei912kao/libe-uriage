@@ -27,9 +27,12 @@ const DB = (() => {
   async function upsertStock(item) {
     if (USE_SUPABASE) {
       const row = { name:item.name, sku:item.sku, cost:item.cost, price:item.price, qty:item.qty, updated_at:new Date().toISOString() };
-      if (item.id) row.id = item.id;
-      const { error } = await client().from('stock_items').upsert(row);
-      if (error) console.warn('stock保存失敗', error);
+      const c = client();
+      // id があれば更新、無ければ新規追加（idは自動採番＝GENERATED ALWAYS のため明示指定しない）
+      let res;
+      if (item.id) res = await c.from('stock_items').update(row).eq('id', item.id);
+      else         res = await c.from('stock_items').insert(row);
+      if (res.error) console.warn('stock保存失敗', res.error);
       return;
     }
     localUpsertStock(item);
