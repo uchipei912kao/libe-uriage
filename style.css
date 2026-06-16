@@ -147,6 +147,9 @@ body {
 .sold-grid .k { color: var(--text-sub); }
 .sold-grid .v { text-align: right; font-weight: 600; }
 .sold-grid .v.profit { color: var(--green); }
+.sold-grid .v.ship-edit { color: var(--red); cursor: pointer; }
+.sold-grid .v.ship-edit.ship-empty { color: var(--blue-mid); text-decoration: underline; }
+.row-note { font-size: 11px; color: var(--blue-mid); font-weight: 400; margin-left: 4px; }
 .sold-badge {
   display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 6px;
   background: var(--blue-light); color: var(--blue-dark); margin-bottom: 6px;

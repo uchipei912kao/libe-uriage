@@ -37,7 +37,7 @@ function computeSummary(soldArr) {
   const dailyPrev = new Array(daysPrev).fill(0);
 
   let todaySales=0, todayCount=0, todayProfit=0;
-  let monthSales=0, monthCount=0, monthCost=0;
+  let monthSales=0, monthCount=0, monthCost=0, monthShip=0;
   let prevMonthSales=0, prevYearSales=0;
 
   (soldArr || []).forEach(it => {
@@ -47,10 +47,11 @@ function computeSummary(soldArr) {
     const day  = parseInt(datePart.slice(8, 10), 10);
     const rev  = (it.price||0) * (it.qty||0);
     const cst  = (it.cost||0)  * (it.qty||0);
-    const prof = rev - cst - (it.point||0);
+    const ship = (it.shipping||0);         // 送料（1件あたり・経費）
+    const prof = rev - cst - ship - (it.point||0);
 
     if (datePart === todayStr) { todaySales+=rev; todayCount+=(it.qty||0); todayProfit+=prof; }
-    if (itYM === curYM)  { monthSales+=rev; monthCount+=(it.qty||0); monthCost+=cst; if (day>=1&&day<=daysCur)  dailyNow[day-1]+=rev; }
+    if (itYM === curYM)  { monthSales+=rev; monthCount+=(it.qty||0); monthCost+=cst; monthShip+=ship; if (day>=1&&day<=daysCur)  dailyNow[day-1]+=rev; }
     if (itYM === prevYM) { prevMonthSales+=rev; if (day>=1&&day<=daysPrev) dailyPrev[day-1]+=rev; }
     if (itYM === prevYrYM) { prevYearSales+=rev; }
   });
@@ -66,7 +67,7 @@ function computeSummary(soldArr) {
     vsPrevYear:  prevYearSales>0  ? (monthSales-prevYearSales)/prevYearSales*100   : 0,
     hasPrevMonth: prevMonthSales>0,
     hasPrevYear:  prevYearSales>0,
-    monthBreakdown: { count: monthCount, sales: monthSales, cost: monthCost },
+    monthBreakdown: { count: monthCount, sales: monthSales, cost: monthCost, shipping: monthShip },
     chartNow:  chartNow.length  ? chartNow  : [0],
     chartPrev: chartPrev.length ? chartPrev : [0],
     period: getPeriod(),
@@ -112,24 +113,25 @@ function setCompare(id, val, hasData) {
 }
 
 /* ===== 月間売上（手動入力対応・過去月選択対応） ===== */
-const MANUAL_FIELDS = ['shipping','fee','point','other','refund'];
+const MANUAL_FIELDS = ['fee','point','other','refund']; // 送料は売上ごとに入力するためここから除外
 const FIELD_LABELS = { shipping:'送料', fee:'販売手数料', point:'ポイント', other:'その他経費', refund:'返金' };
 
 function manualFallback() {
   return { shipping: 0, fee: 0, point: 0, other: 0, refund: 0 };
 }
 
-/* 指定した月(YYYY-MM)の集計を sold から計算 */
+/* 指定した月(YYYY-MM)の集計を sold から計算（送料も合算） */
 function monthBreakdownFor(ym) {
-  let count = 0, sales = 0, cost = 0;
+  let count = 0, sales = 0, cost = 0, shipping = 0;
   (sold || []).forEach(it => {
     if (String(it.date || '').slice(0, 7) === ym) {
       count += (it.qty||0);
       sales += (it.price||0) * (it.qty||0);
       cost  += (it.cost||0)  * (it.qty||0);
+      shipping += (it.shipping||0);
     }
   });
-  return { count, sales, cost };
+  return { count, sales, cost, shipping };
 }
 
 /* 売上のある月＋今月 を新しい順で返す */
@@ -154,14 +156,14 @@ function renderMonthly() {
   $('bd-count').textContent  = b.count.toLocaleString('ja-JP') + 'コ';
   $('bd-sales').textContent  = yen(b.sales);
   $('bd-cost').textContent   = '-' + yen(b.cost);
-  $('bd-ship').textContent   = yen(m.shipping);
+  $('bd-ship').textContent   = '-' + yen(b.shipping);  // 各売上の送料を合算（経費）
   $('bd-fee').textContent    = '-' + yen(m.fee);
   $('bd-point').textContent  = '-' + Math.round(m.point).toLocaleString('ja-JP') + 'pt';
   $('bd-other').textContent  = '-' + yen(m.other);
   $('bd-refund').textContent = '-' + yen(m.refund);
 
-  // 利益額＝売上＋送料－仕入－手数料－ポイント－その他－返金
-  const profit = b.sales + m.shipping - b.cost - m.fee - m.point - m.other - m.refund;
+  // 利益額＝売上－仕入－送料－手数料－ポイント－その他－返金
+  const profit = b.sales - b.cost - b.shipping - m.fee - m.point - m.other - m.refund;
   const rate = b.sales > 0 ? (profit / b.sales * 100) : 0;
   $('bd-profit').textContent = yen(profit);
   $('bd-rate').textContent   = rate.toFixed(1) + '%';
@@ -193,8 +195,9 @@ async function changePeriod(label) {
 function renderSold() {
   const list = $('sold-list');
   list.innerHTML = '';
-  sold.forEach(it => {
-    const gross = it.price * it.qty - it.cost * it.qty - it.point;
+  sold.forEach((it, idx) => {
+    const gross = it.price * it.qty - it.cost * it.qty - (it.shipping||0) - (it.point||0);
+    const shipText = (it.shipping||0) > 0 ? '-' + yen(it.shipping) : '入力する';
     const card = document.createElement('div');
     card.className = 'sold-card';
     card.innerHTML = `
@@ -204,11 +207,31 @@ function renderSold() {
       <div class="sold-grid">
         <div class="k">商品価格</div><div class="v">${yen(it.price)}</div>
         <div class="k">仕入価格</div><div class="v">${it.cost > 0 ? yen(it.cost) : '—'}</div>
+        <div class="k">送料 <i class="ti ti-pencil edit-ic"></i></div><div class="v ship-edit ${(it.shipping||0)>0?'':'ship-empty'}" data-idx="${idx}">${shipText}</div>
         <div class="k">売れた個数</div><div class="v">${it.qty}</div>
         <div class="k">粗利</div><div class="v profit">${it.cost > 0 ? yen(gross) : '—'}</div>
       </div>`;
     list.appendChild(card);
   });
+  document.querySelectorAll('.ship-edit').forEach(el => {
+    el.addEventListener('click', () => editSoldShipping(parseInt(el.dataset.idx, 10)));
+  });
+}
+
+/* 売れたもの1件の送料を手入力 → DB保存 → 月間にも反映 */
+async function editSoldShipping(idx) {
+  const it = sold[idx];
+  if (!it) return;
+  const cur = it.shipping || 0;
+  const input = prompt(`送料を入力（円）\n${it.name.slice(0, 24)}…`, cur);
+  if (input === null) return;
+  const val = Number(String(input).replace(/[,，\s¥￥]/g, ''));
+  if (isNaN(val) || val < 0) { alert('正しい数字を入力してください'); return; }
+  await DB.updateSold(it.id, { shipping: val });
+  await reloadSold();   // sold再取得＆summary再計算
+  renderSold();
+  renderMonthly();
+  renderDashboard();
 }
 
 /* ===== 在庫 ===== */

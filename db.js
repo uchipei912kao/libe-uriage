@@ -56,9 +56,16 @@ const DB = (() => {
       const { data, error } = await client().from('sold_items').select('*').order('date', { ascending:false });
       if (error) { console.warn('sold取得失敗', error); return localGetSold(); }
       // DBのカラム名 → アプリの形に整形
-      return data.map(r => ({ name:r.name, orderNo:r.order_no, date:fmtDate(r.date), price:r.price, cost:r.cost, shipping:r.shipping, point:r.point, qty:r.qty, stock:r.stock||0, status:r.status }));
+      return data.map(r => ({ id:r.id, name:r.name, orderNo:r.order_no, date:fmtDate(r.date), price:r.price, cost:r.cost, shipping:r.shipping||0, point:r.point, qty:r.qty, stock:r.stock||0, status:r.status }));
     }
     return localGetSold();
+  }
+  // 売れたもの1件の項目を更新（送料の手入力など）
+  async function updateSold(id, fields) {
+    if (USE_SUPABASE) {
+      const { error } = await client().from('sold_items').update(fields).eq('id', id);
+      if (error) console.warn('sold更新失敗', error);
+    }
   }
   function localGetSold() {
     return JSON.parse(JSON.stringify(typeof SOLD_ITEMS !== 'undefined' ? SOLD_ITEMS : []));
@@ -97,7 +104,7 @@ const DB = (() => {
   return {
     mode: USE_SUPABASE ? 'supabase' : 'local',
     getStock, upsertStock, localSaveStockAll,
-    getSold,
+    getSold, updateSold,
     getManual, saveManual,
   };
 })();
