@@ -4,16 +4,71 @@ const yen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
 const $ = (id) => document.getElementById(id);
 
 /* ---- データ（DB層 経由：Supabase未設定ならスマホ内＋ダミー） ---- */
-let stock  = [];    // 在庫
-let sold   = [];    // 売れたもの
-let manual = null;  // 月別手動入力（送料・手数料 等）
+let stock   = [];    // 在庫
+let sold    = [];    // 売れたもの
+let manual  = null;  // 月別手動入力（送料・手数料 等）
+let summary = null;  // 売上集計（sold から計算した実データ）
+
+function getPeriod() { const n = new Date(); return `${n.getFullYear()}年${n.getMonth()+1}月`; }
 
 async function reloadStock()  { stock  = await DB.getStock(); }
-async function reloadSold()   { sold   = await DB.getSold(); }
-async function reloadManual() { manual = await DB.getManual(SUMMARY.period); }
+async function reloadSold()   { sold   = await DB.getSold(); summary = computeSummary(sold); }
+async function reloadManual() { manual = await DB.getManual(getPeriod()); }
 
 /* ローカルモード時の在庫保存（DBモードは upsert を使う） */
 function saveStockLocal() { if (DB.mode === 'local') DB.localSaveStockAll(stock); }
+
+/* ===== 売れたものデータから売上集計を計算 ===== */
+function computeSummary(soldArr) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const curYM    = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  const prevD    = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const prevYM   = `${prevD.getFullYear()}-${pad(prevD.getMonth()+1)}`;
+  const prevYrYM = `${now.getFullYear()-1}-${pad(now.getMonth()+1)}`;
+
+  const daysCur  = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const daysPrev = new Date(prevD.getFullYear(), prevD.getMonth()+1, 0).getDate();
+  const dailyNow  = new Array(daysCur).fill(0);
+  const dailyPrev = new Array(daysPrev).fill(0);
+
+  let todaySales=0, todayCount=0, todayProfit=0;
+  let monthSales=0, monthCount=0, monthCost=0;
+  let prevMonthSales=0, prevYearSales=0;
+
+  (soldArr || []).forEach(it => {
+    const ds = String(it.date || '');
+    const datePart = ds.slice(0, 10);      // YYYY-MM-DD
+    const itYM = datePart.slice(0, 7);     // YYYY-MM
+    const day  = parseInt(datePart.slice(8, 10), 10);
+    const rev  = (it.price||0) * (it.qty||0);
+    const cst  = (it.cost||0)  * (it.qty||0);
+    const prof = rev - cst - (it.point||0);
+
+    if (datePart === todayStr) { todaySales+=rev; todayCount+=(it.qty||0); todayProfit+=prof; }
+    if (itYM === curYM)  { monthSales+=rev; monthCount+=(it.qty||0); monthCost+=cst; if (day>=1&&day<=daysCur)  dailyNow[day-1]+=rev; }
+    if (itYM === prevYM) { prevMonthSales+=rev; if (day>=1&&day<=daysPrev) dailyPrev[day-1]+=rev; }
+    if (itYM === prevYrYM) { prevYearSales+=rev; }
+  });
+
+  const cumulative = (arr) => { let s=0; return arr.map(v => s+=v); };
+  const chartNow  = cumulative(dailyNow).slice(0, now.getDate()); // 今日まで
+  const chartPrev = cumulative(dailyPrev);
+
+  return {
+    todaySales, todayCount, todayProfit,
+    monthSales,
+    vsPrevMonth: prevMonthSales>0 ? (monthSales-prevMonthSales)/prevMonthSales*100 : 0,
+    vsPrevYear:  prevYearSales>0  ? (monthSales-prevYearSales)/prevYearSales*100   : 0,
+    hasPrevMonth: prevMonthSales>0,
+    hasPrevYear:  prevYearSales>0,
+    monthBreakdown: { count: monthCount, sales: monthSales, cost: monthCost },
+    chartNow:  chartNow.length  ? chartNow  : [0],
+    chartPrev: chartPrev.length ? chartPrev : [0],
+    period: getPeriod(),
+  };
+}
 
 /* ===== ダッシュボード描画 ===== */
 function renderDashboard() {
@@ -22,13 +77,14 @@ function renderDashboard() {
   $('today-date').textContent =
     `${now.getFullYear()}年${String(now.getMonth()+1).padStart(2,'0')}月${String(now.getDate()).padStart(2,'0')}日（${days[now.getDay()]}）`;
 
-  $('d-sales').textContent = yen(SUMMARY.todaySales);
-  $('d-count').textContent = SUMMARY.todayCount;
-  $('d-profit').textContent = yen(SUMMARY.todayProfit);
+  const s = summary || computeSummary(sold);
+  $('d-sales').textContent = yen(s.todaySales);
+  $('d-count').textContent = s.todayCount;
+  $('d-profit').textContent = yen(s.todayProfit);
 
-  $('m-sales').textContent = yen(SUMMARY.monthSales);
-  setCompare('m-vs-prev', SUMMARY.vsPrevMonth);
-  setCompare('m-vs-year', SUMMARY.vsPrevYear);
+  $('m-sales').textContent = yen(s.monthSales);
+  setCompare('m-vs-prev', s.vsPrevMonth, s.hasPrevMonth);
+  setCompare('m-vs-year', s.vsPrevYear, s.hasPrevYear);
 
   // 在庫情報（保存された在庫から再計算）
   const totalQty = stock.reduce((s,i)=> s + (i.qty||0), 0);
@@ -37,15 +93,18 @@ function renderDashboard() {
   $('s-count').textContent = totalQty.toLocaleString('ja-JP') + 'コ';
   $('s-sell').textContent  = yen(sellVal);
   $('s-cost').textContent  = yen(costVal);
-  const turnover = 67; // ダミー（次回：売上÷在庫から算出）
+  // 販売率（今月売れた数 ÷（今月売れた数＋現在庫数））
+  const soldQty = s.monthBreakdown.count;
+  const turnover = (soldQty + totalQty) > 0 ? Math.round(soldQty / (soldQty + totalQty) * 100) : 0;
   $('turnover-ring').style.setProperty('--p', turnover + '%');
   $('turnover-val').textContent = turnover + '%';
 }
 
-function setCompare(id, val) {
+function setCompare(id, val, hasData) {
   const el = $(id);
+  if (hasData === false) { el.textContent = '―'; el.className = 'cmp-v'; return; }
   const up = val >= 0;
-  el.textContent = (up ? '' : '') + Math.abs(val).toFixed(1) + '%' + (up ? '↑' : '↓');
+  el.textContent = Math.abs(val).toFixed(1) + '%' + (up ? '↑' : '↓');
   el.className = 'cmp-v ' + (up ? 'up' : 'down');
 }
 
@@ -54,15 +113,15 @@ const MANUAL_FIELDS = ['shipping','fee','point','other','refund'];
 const FIELD_LABELS = { shipping:'送料', fee:'販売手数料', point:'ポイント', other:'その他経費', refund:'返金' };
 
 function manualFallback() {
-  const b = SUMMARY.monthBreakdown;
-  return { shipping: b.shipping, fee: b.fee, point: b.point, other: b.other, refund: b.refund };
+  return { shipping: 0, fee: 0, point: 0, other: 0, refund: 0 };
 }
 
 function renderMonthly() {
-  const b = SUMMARY.monthBreakdown;
+  const s = summary || computeSummary(sold);
+  const b = s.monthBreakdown;
   const m = manual || manualFallback();
 
-  $('period-text').textContent = SUMMARY.period;
+  $('period-text').textContent = s.period;
   $('bd-count').textContent  = b.count.toLocaleString('ja-JP') + 'コ';
   $('bd-sales').textContent  = yen(b.sales);
   $('bd-cost').textContent   = '-' + yen(b.cost);
@@ -90,7 +149,7 @@ async function editManualField(field) {
   if (isNaN(val)) { alert('数字を入力してください'); return; }
   m[field] = val;
   manual = m;
-  await DB.saveManual(SUMMARY.period, m);
+  await DB.saveManual(getPeriod(), m);
   renderMonthly();
 }
 
@@ -182,21 +241,22 @@ function renderChart() {
   const ctx = $('salesChart');
   if (!ctx || typeof Chart === 'undefined') return;
   if (chart) chart.destroy();
-  const labels = SUMMARY.chartNow.map((_,i)=> (i+1)*Math.ceil(30/SUMMARY.chartNow.length));
+  const s = summary || computeSummary(sold);
+  const len = Math.max(s.chartNow.length, s.chartPrev.length);
   chart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: SUMMARY.chartNow.map((_,i)=> i+1),
+      labels: Array.from({length: len}, (_,i)=> i+1),
       datasets: [
-        { label:'今月', data: SUMMARY.chartNow, borderColor:'#185FA5', backgroundColor:'#185FA5', borderWidth:2.5, tension:0.3, pointRadius:0 },
-        { label:'先月', data: SUMMARY.chartPrev, borderColor:'#EF9F27', borderWidth:1.5, borderDash:[5,4], tension:0.3, pointRadius:0 },
+        { label:'今月', data: s.chartNow, borderColor:'#185FA5', backgroundColor:'#185FA5', borderWidth:2.5, tension:0.3, pointRadius:0 },
+        { label:'先月', data: s.chartPrev, borderColor:'#EF9F27', borderWidth:1.5, borderDash:[5,4], tension:0.3, pointRadius:0 },
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false } },
       scales:{
-        y:{ ticks:{ callback:(v)=> (v/1000000).toFixed(0)+'M', font:{size:10}, color:'#9AA4B0' }, grid:{ color:'#EEF1F5' } },
+        y:{ ticks:{ callback:(v)=> v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v>=1000 ? Math.round(v/1000)+'K' : v), font:{size:10}, color:'#9AA4B0' }, grid:{ color:'#EEF1F5' } },
         x:{ ticks:{ font:{size:9}, color:'#9AA4B0', maxTicksLimit:8 }, grid:{ display:false } }
       }
     }

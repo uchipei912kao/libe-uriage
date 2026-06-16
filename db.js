@@ -90,8 +90,8 @@ const DB = (() => {
   function localGetManual(period) {
     const s = localStorage.getItem('libe_manual_' + period);
     if (s) { try { return JSON.parse(s); } catch(e){} }
-    const b = (typeof SUMMARY !== 'undefined') ? SUMMARY.monthBreakdown : {};
-    return { shipping:b.shipping||0, fee:b.fee||0, point:b.point||0, other:b.other||0, refund:b.refund||0 };
+    // 未入力なら0（旧ダミー経費は使わない）
+    return { shipping:0, fee:0, point:0, other:0, refund:0 };
   }
 
   return {
